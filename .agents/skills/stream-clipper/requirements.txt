@@ -1,0 +1,6 @@
+faster-whisper>=1.2,<2
+opencv-python-headless>=4.10,<6
+yt-dlp[default]>=2026.1
+numpy>=2,<3
+psutil>=6,<8
+PyYAML>=6,<7

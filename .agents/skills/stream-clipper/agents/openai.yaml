@@ -1,0 +1,4 @@
+interface:
+  display_name: "Stream Clipper"
+  short_description: "Cortes revisados, legendas e transcrição local"
+  default_prompt: "Use $stream-clipper para encontrar candidatos a cortes de um vídeo, pedir autorização da fonte e revisar antes de renderizar."
