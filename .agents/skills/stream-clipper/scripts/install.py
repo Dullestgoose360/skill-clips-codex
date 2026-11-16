@@ -37,10 +37,10 @@ def reject_reparse_components(path):
 def reject_tree_links(root):
     root = Path(root)
     for item in (root, *root.rglob('*')):
-        if not item.exists():
-            continue
         try:
             info = item.lstat()
+        except FileNotFoundError:
+            continue
         except OSError as exc:
             raise ClipError(f'Cannot inspect skill path: {item}') from exc
         reparse = getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0)

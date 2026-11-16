@@ -1,5 +1,6 @@
 """Additional reliability and benchmark-summary tests for the Stream Clipper."""
 from pathlib import Path
+import os
 import sys
 import tempfile
 import unittest
@@ -45,6 +46,16 @@ class InstallReliabilityTests(unittest.TestCase):
         skill.write_text(skill.read_text(encoding='utf-8') + '\nlocal modification\n', encoding='utf-8')
         with self.assertRaises(Exception):
             install.verify(self.destination)
+
+    @unittest.skipIf(os.name == 'nt', 'Creating symlinks may require elevated privileges on Windows')
+    def test_dangling_symlink_in_existing_install_is_rejected(self):
+        install.install(self.source, self.destination)
+        dangling = self.destination / 'dangling-link'
+        dangling.symlink_to(self.root / 'target-that-does-not-exist')
+        with self.assertRaises(Exception):
+            install.install(self.source, self.destination)
+        self.assertTrue(dangling.is_symlink())
+        self.assertTrue((self.destination / 'SKILL.md').is_file())
 
     def test_failed_staging_keeps_existing_installation(self):
         install.install(self.source, self.destination)
