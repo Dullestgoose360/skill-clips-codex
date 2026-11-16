@@ -1,4 +1,5 @@
 """Synthetic FFmpeg round-trip tests; no third-party source material is used."""
+import json
 from pathlib import Path
 import shutil
 import sys
@@ -10,6 +11,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from core import run
 import config
 import media
+
 
 @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'),
                      'FFmpeg and FFprobe are required for audiovisual integration')
@@ -32,8 +34,15 @@ class AudiovisualIntegrationTests(unittest.TestCase):
         source_info = media.validate_media(source, duration=2, full=True)
         self.assertEqual((source_info['width'], source_info['height']), (320, 180))
         self.assertTrue(source_info['full_decode'])
-        cfg = config.load({'profile': '9:16', 'width': 360, 'height': 640, 'fps': 15,
-                           'layout': 'camera-top', 'camera_box': [0, 0, 160, 90]})
+
+        # config.load accepts a JSON file path; use the same interface as the CLI.
+        config_path = self.root / 'av-config.json'
+        config_path.write_text(json.dumps({
+            'profile': '9:16', 'width': 360, 'height': 640, 'fps': 15,
+            'layout': 'camera-top', 'camera_box': [0, 0, 160, 90]
+        }), encoding='utf-8')
+        cfg = config.load(config_path)
+
         camera = media.faces(source, cfg)
         self.assertEqual(camera['method'], 'manual')
         self.assertEqual(camera['box'], [0, 0, 160, 90])
@@ -59,6 +68,7 @@ class AudiovisualIntegrationTests(unittest.TestCase):
         corrupt.write_bytes(b'not an mp4 file')
         with self.assertRaises(Exception):
             media.validate_media(corrupt)
+
 
 if __name__ == '__main__':
     unittest.main()
