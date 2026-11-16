@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Portable CLI; editorial choices stay with the agent and the user."""
 import argparse
+from difflib import SequenceMatcher
 import importlib.metadata
 import json
 import os
 from pathlib import Path
 import shutil
+import statistics
 import sys
 import time
 from core import ClipError, atomic, event, lock, read, run
@@ -36,6 +38,44 @@ def doctor():
                 python_version=sys.version.split()[0],packages=packages,binaries=binaries,cuda_devices=gpu,
                 cuda_note='Detection is not a successful transcription; use benchmark',runtime=runtime())
 
+
+
+def summarize_benchmark(results):
+    """Summarize repeated CPU/CUDA observations without hiding failed runs."""
+    summary = {}
+    for device in ('cpu', 'cuda'):
+        successful = [item for item in results if item['device'] == device and item['status'] == 'complete']
+        failed = [item for item in results if item['device'] == device and item['status'] != 'complete']
+        summary[device] = dict(successes=len(successful), failures=len(failed))
+        for field in ('load_seconds', 'transcribe_seconds', 'wall_seconds'):
+            values = [float(item[field]) for item in successful if item.get(field) is not None]
+            summary[device]['median_' + field] = round(statistics.median(values), 4) if values else None
+        for field in ('rss_bytes', 'vram_total_mib', 'vram_baseline_mib'):
+            values = [float(item['resources'][field]) for item in successful
+                      if item.get('resources', {}).get(field) is not None]
+            summary[device]['median_' + field] = round(statistics.median(values), 2) if values else None
+        deltas = []
+        for item in successful:
+            resource = item.get('resources') or {}
+            if resource.get('vram_total_mib') is not None and resource.get('vram_baseline_mib') is not None:
+                deltas.append(max(0, resource['vram_total_mib'] - resource['vram_baseline_mib']))
+        summary[device]['median_vram_delta_mib'] = round(statistics.median(deltas), 2) if deltas else None
+
+    cpu = summary['cpu']['median_transcribe_seconds']
+    cuda = summary['cuda']['median_transcribe_seconds']
+    summary['cuda_speedup_vs_cpu'] = round(cpu / cuda, 3) if cpu and cuda and cuda > 0 else None
+    similarities = []
+    for repetition in sorted({item['repetition'] for item in results}):
+        cpu_runs = [item for item in results if item['device'] == 'cpu' and item['repetition'] == repetition and item['status'] == 'complete']
+        cuda_runs = [item for item in results if item['device'] == 'cuda' and item['repetition'] == repetition and item['status'] == 'complete']
+        if cpu_runs and cuda_runs:
+            left = ' '.join(cpu_runs[0].get('transcript', '').split()).casefold()
+            right = ' '.join(cuda_runs[0].get('transcript', '').split()).casefold()
+            if left or right:
+                similarities.append(SequenceMatcher(None, left, right).ratio())
+    summary['cpu_cuda_transcript_similarity'] = round(statistics.mean(similarities), 4) if similarities else None
+    summary['transcript_similarity_note'] = 'Consistency proxy only; not WER/CER and not a human accuracy assessment.'
+    return summary
 
 def main():
     parser=argparse.ArgumentParser(description='Stream Clipper: authorized sources, reviewed candidates, local export')
@@ -98,23 +138,29 @@ def main():
         if args.command in ('render','preview'): return flow.render(p,args.ids,args.command=='preview')
         if args.command=='benchmark':
             meta=flow.authorized(p); cfg=config.load(args.config)
-            if not 1<=args.seconds<=120 or not 1<=args.repeats<=5: raise ClipError('Benchmark requires 1–120 seconds and 1–5 repetitions')
-            audio=flow.section(p,meta,cfg,0,min(args.seconds,meta['duration']))
+            if not 1<=args.seconds<=120 or not 1<=args.repeats<=5:
+                raise ClipError('Benchmark requires 1–120 seconds and 1–5 repetitions')
+            sample_seconds=min(args.seconds,meta['duration'])
+            audio=flow.section(p,meta,cfg,0,sample_seconds)
             results=[]
             for repetition in range(args.repeats):
                 for dev in ('cpu','cuda'):
                     try:
                         trans=flow.speech(p,audio,cfg,dev)
-                        result={k:trans[k] for k in ('device','compute_type','load_seconds','transcribe_seconds','wall_seconds','resources')}
-                        result.update(status='complete',repetition=repetition,transcript=' '.join(s['text'] for s in trans['segments']))
-                    except Exception as e:
-                        result=dict(device=dev,status='failed',error=type(e).__name__,repetition=repetition)
+                        result={key:trans[key] for key in ('device','compute_type','load_seconds','transcribe_seconds','wall_seconds','resources')}
+                        result.update(status='complete',repetition=repetition,
+                                      transcript=' '.join(segment['text'] for segment in trans['segments']))
+                    except Exception as exc:
+                        result=dict(device=dev,status='failed',error=type(exc).__name__,repetition=repetition)
                     results.append(result)
                     event(p,'benchmark',result['status'],device=dev,repetition=repetition)
-            dest=p/('benchmark-'+str(time.time_ns())+'.json')
-            atomic(dest,dict(source=meta['id'],seconds=min(args.seconds,meta['duration']),config=cfg,results=results,
-                             measurement='RSS includes worker process tree; VRAM is total device use, sampled ~1s, not isolated per process'))
-            return dict(path=str(dest),results=results)
+            summary=summarize_benchmark(results)
+            destination=p/('benchmark-'+str(time.time_ns())+'.json')
+            atomic(destination,dict(schema_version=2,source=meta['id'],seconds=sample_seconds,config=cfg,
+                                    order='CPU int8 then CUDA float16 in each repetition; each sample uses an isolated worker process',
+                                    results=results,summary=summary,
+                                    measurement='RSS includes worker process tree. VRAM is total device use sampled periodically, not isolated per process; other applications contribute. Transcript similarity is a consistency proxy, not WER/CER.'))
+            return dict(path=str(destination),seconds=sample_seconds,summary=summary,results=results)
         if args.command=='cleanup-plan':
             flow.authorized(p)
             # Only disposable worker/chat intermediates. Never source cache, generations, previews or finals.

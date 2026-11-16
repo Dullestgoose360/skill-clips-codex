@@ -46,6 +46,12 @@ def install(source,destination):
         if destination.exists():
             backup=destination.with_name(destination.name+'.backup-'+datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S')+'-'+uuid.uuid4().hex[:8])
             destination.rename(backup)
+            # Snapshot the exact pre-update files, including user-added notes, for a verifiable rollback.
+            backup_receipt = dict(source='previous installation snapshot', destination=str(destination),
+                                  files=old_manifest, previous_files=None, backup=None,
+                                  installed_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                                  snapshot=True)
+            atomic(backup / 'install-receipt.json', backup_receipt)
             # Reuse existing runtime without copying or modifying backup code.
             for item in ('.runtime','.venv'):
                 if (backup/item).exists():

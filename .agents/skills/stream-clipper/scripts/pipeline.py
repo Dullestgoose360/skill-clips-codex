@@ -145,9 +145,15 @@ def section(p, meta, cfg, start, end, audio=True):
             validate_media(files[0],end-start,video=not audio)
             local=files[0]
             offset=0
-        except (ClipError, TimeoutError):
+        except (ClipError, subprocess.TimeoutExpired) as exc:
+            event(p,'section','partial-download-failed',error=type(exc).__name__,fallback='full-source-plan-required')
+            # Discard only this operation's incomplete partial-download directory.
+            shutil.rmtree(stage, ignore_errors=True)
             local=full_source(p,meta,cfg)
             offset=start
+            stage=cache/uuid.uuid4().hex
+            stage.mkdir(parents=True,exist_ok=True)
+            target=stage/('audio.wav' if audio else 'section.mp4')
     else:
         offset=start
     cmd=[tool('ffmpeg'),'-v','error','-n','-ss',str(offset),'-i',str(local),'-t',str(end-start)]

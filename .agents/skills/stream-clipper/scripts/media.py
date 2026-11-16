@@ -24,33 +24,63 @@ def tool(name):
 
 def probe(path):
     import json
-    return json.loads(run([tool('ffprobe'), '-v', 'error', '-show_format', '-show_streams', '-of', 'json', path], 120))
+    return json.loads(run([tool('ffprobe'), '-v', 'error', '-show_format', '-show_streams', '-of', 'json', str(path)], 120))
 
 
 def validate_media(path, duration=None, video=True, size=None, full=False):
-    p = probe(path)
-    streams = p.get('streams', [])
-    a = [s for s in streams if s['codec_type'] == 'audio']
-    v = [s for s in streams if s['codec_type'] == 'video']
-    d = seconds(p['format']['duration'])
-    if d <= 0 or not a or (video and not v):
-        raise ClipError('Missing audio/video or empty media')
-    if duration is not None and abs(d - duration) > max(.35, duration * .01):
-        raise ClipError('Unexpected media duration')
-    if size and (v[0]['width'], v[0]['height']) != tuple(size):
-        raise ClipError('Unexpected video dimensions')
-    if video:
-        av = (a[0], v[0])
-        starts = [float(s.get('start_time', 0)) for s in av]
-        ends = [float(s.get('duration', d)) + t for s, t in zip(av, starts)]
-        if abs(starts[0] - starts[1]) > .25 or abs(ends[0] - ends[1]) > .35:
-            raise ClipError('Audio/video timeline mismatch')
-    if full:
-        run([tool('ffmpeg'), '-v', 'error', '-xerror', '-i', path, '-map', '0:a',
-             *(['-map', '0:v'] if video else []), '-f', 'null', '-'], max(120, d * 4))
-    return dict(duration=d, bytes=Path(path).stat().st_size, width=v[0]['width'] if v else None,
-                height=v[0]['height'] if v else None, full_decode=full)
+    """Validate streams, duration, A/V alignment and optionally decode every packet."""
+    path = Path(path)
+    if not path.is_file() or path.stat().st_size == 0:
+        raise ClipError(f'Media file is missing or empty: {path.name}')
+    try:
+        payload = probe(path)
+        streams = payload.get('streams', [])
+        if not isinstance(streams, list):
+            raise ClipError('ffprobe returned an invalid stream list')
+        audio = [stream for stream in streams if isinstance(stream, dict) and stream.get('codec_type') == 'audio']
+        videos = [stream for stream in streams if isinstance(stream, dict) and stream.get('codec_type') == 'video']
+        actual_duration = seconds((payload.get('format') or {}).get('duration'))
+    except ClipError:
+        raise
+    except (KeyError, TypeError, ValueError, IndexError) as exc:
+        raise ClipError('ffprobe metadata is incomplete or invalid') from exc
 
+    if actual_duration <= 0 or not audio or (video and not videos):
+        raise ClipError('Media must contain a nonempty audio stream and the required video stream')
+    if duration is not None and abs(actual_duration - duration) > max(.35, duration * .01):
+        raise ClipError(f'Unexpected media duration: expected {duration:.3f}s, got {actual_duration:.3f}s')
+
+    first_video = videos[0] if videos else None
+    if size:
+        if first_video is None or (int(first_video['width']), int(first_video['height'])) != tuple(size):
+            raise ClipError('Unexpected video dimensions')
+
+    if video:
+        def track_range(stream):
+            start_value = stream.get('start_time')
+            duration_value = stream.get('duration')
+            start = float(start_value) if start_value not in (None, 'N/A', '') else 0.0
+            length = float(duration_value) if duration_value not in (None, 'N/A', '') else actual_duration
+            if not math.isfinite(start) or not math.isfinite(length) or length <= 0:
+                raise ClipError('Invalid audio/video stream timing')
+            return start, start + length
+
+        audio_range = track_range(audio[0])
+        video_range = track_range(first_video)
+        if abs(audio_range[0] - video_range[0]) > .25 or abs(audio_range[1] - video_range[1]) > .35:
+            raise ClipError('Audio/video timeline mismatch')
+
+    if full:
+        maps = ['-map', '0:a:0']
+        if video:
+            maps += ['-map', '0:v:0']
+        run([tool('ffmpeg'), '-v', 'error', '-xerror', '-i', str(path), *maps, '-f', 'null', '-'],
+            max(120, actual_duration * 4))
+
+    return dict(duration=actual_duration, bytes=path.stat().st_size,
+                width=int(first_video['width']) if first_video else None,
+                height=int(first_video['height']) if first_video else None,
+                audio_streams=len(audio), video_streams=len(videos), full_decode=full)
 
 def ytdlp(*args):
     cmd = [sys.executable, '-m', 'yt_dlp', '--ignore-config', '--no-playlist', '--no-warnings',

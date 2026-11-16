@@ -1,64 +1,132 @@
-# Clipper do GTA 6
+# Stream Clipper — skill nativa do Codex
 
-Uma skill grátis pro Claude Code que transforma lives longas de streamers em cortes verticais prontos pra postar.
+Fork independente de davixavier-coder/skill-clips, adaptado para o Codex e generalizado para vídeos longos, podcasts e transmissões gravadas. O fluxo ativo está em **.agents/skills/stream-clipper/**.
 
-Você manda o link de uma live (YouTube, Twitch ou Kick), ou pede as maiores lives de GTA 6 do dia, e recebe:
+- **Descoberta:** busca automatizada inicial no YouTube; para Twitch e Kick, use links diretos ou descoberta externa.
+- **Fontes:** VODs públicos finalizados e arquivos locais. Lives em andamento, fontes privadas, DRM, conteúdo exclusivo para membros e tentativas de contornar autenticação não são suportados.
+- **Análise:** transcrição local em blocos, indicadores de áudio, tentativa de chat replay do YouTube e seleção editorial feita pelo Codex.
+- **Revisão:** candidatos e previews são apresentados antes da aprovação explícita.
+- **Exportação:** FFmpeg gera 9:16, 16:9 ou 1:1, com legendas e layout configurável.
+- **Publicação:** não existe publicação automática neste projeto.
 
-- o corte vertical (1080×1920): câmera do streamer em cima, jogo embaixo
-- título de gancho e legenda palavra por palavra
-- um `.txt` com a legenda do post, as hashtags e o crédito da live
+## Estrutura
 
-## O que ela faz, em 4 passos
+~~~text
+.agents/skills/stream-clipper/
+  SKILL.md
+  agents/openai.yaml
+  references/
+  scripts/
+  tests/
+~~~
 
-1. **Baixa só o áudio.** Uma live de 4 horas fica com algumas centenas de MB, não um vídeo gigante.
-2. **Escuta a live inteira no seu computador.** Escreve tudo que o streamer fala e marca onde ele ficou alto
-   (grito, surto) e, no YouTube, onde o chat acelerou.
-3. **A IA lê 12 minutos por vez e dá nota pra cada momento.** É rigorosa: o que precisa de contexto ou começa
-   com enrolação vai pro lixo.
-4. **Monta os cortes.** Baixa só os minutos escolhidos, acha a câmera do streamer sozinha e coloca a legenda.
+Os arquivos no diretório raiz (SKILL.md e scripts/) foram preservados como snapshot do projeto de origem para manter a rastreabilidade. Eles são legados e **não** são a skill ativa do Codex.
 
-## Instalação
+## Requisitos
 
-Você precisa do **Claude Code** (pode ser com a sua assinatura do Claude ou de graça, com o Ollama).
+- Windows 10/11, macOS ou Linux.
+- Python 3.10+ (recomendado 3.11).
+- FFmpeg e FFprobe disponíveis no PATH.
+- Dependências listadas em .agents/skills/stream-clipper/requirements.txt.
+- Espaço em disco para áudio, cache, previews e cortes finais.
 
-### Jeito de graça (Ollama)
+A transcrição é local com Faster-Whisper. Modelos de fala não são baixados automaticamente por padrão: configure allow_model_download: true somente depois de revisar o modelo e o espaço necessário. Análise editorial é feita pelo Codex na conversa; não há API externa paga embutida.
 
-1. Instale o Ollama: https://ollama.com/download
-2. Instale o Claude Code. No terminal:
-   - Mac: `curl -fsSL https://claude.ai/install.sh | bash`
-   - Windows (PowerShell): `irm https://claude.ai/install.ps1 | iex`
-3. Veja a memória do seu computador (Mac: maçã → Sobre este Mac; Windows: Configurações → Sistema → Sobre).
-   - 16 GB → `qwen3.5:9b`
-   - 32 GB ou mais → `qwen3.5:27b`
-4. No terminal: `ollama launch claude` e escolha o modelo. O Ollama baixa ele sozinho na primeira vez.
+## Instalar a skill pessoal no Windows
 
-### Com a assinatura do Claude
+Abra o PowerShell na raiz do checkout:
 
-Só instale o Claude Code (passo 2) e abra com `claude`. As escolhas dos cortes ficam bem melhores.
+~~~powershell
+$skill = (Resolve-Path ".agents\skills\stream-clipper").Path
+$destination = Join-Path $HOME ".agents\skills\stream-clipper"
 
-### Colocando a skill
+py -3.11 "$skill\scripts\install.py" --source "$skill" --destination "$destination"
 
-Baixe esta skill (botão verde **Code → Download ZIP**), descompacte, arraste a pasta pra dentro do Claude Code e fale:
+py -3.11 -m venv "$destination\.venv"
+& "$destination\.venv\Scripts\python.exe" -m pip install --upgrade pip
+& "$destination\.venv\Scripts\python.exe" -m pip install -r "$destination\requirements.txt"
+~~~
 
-> instala essa skill e monta o clipper do GTA 6
+Instale FFmpeg/FFprobe separadamente, se necessário:
 
-Ele confere o que falta no seu computador (ffmpeg, Python), instala e avisa quando tá pronto.
+~~~powershell
+winget install --id Gyan.FFmpeg -e
+~~~
 
-## Usando
+Depois de instalar, feche e reabra o terminal. Faça o diagnóstico:
 
-- "corta essa live: LINK"
-- "acha as maiores lives de GTA 6 de hoje e corta"
-- "faz 5 cortes dessa live: LINK"
+~~~powershell
+$py = "$destination\.venv\Scripts\python.exe"
+$clip = "$destination\scripts\clip.py"
+& $py $clip doctor
+& $py $clip config
+& $py "$destination\scripts\install.py" --verify --destination "$destination"
+~~~
 
-Os cortes ficam na pasta `clipper-gta6/cortes` da sua pasta de usuário.
+O script de sincronização copia e verifica os arquivos da skill, cria backup de uma instalação anterior e preserva .venv, .runtime e runtime.json. A instalação de dependências é uma etapa separada e explícita.
 
-## Precisa ter
+## Instalação no macOS/Linux
 
-- Mac, Windows ou Linux
-- Python 3.10 ou mais novo (python.org)
-- ffmpeg (o Claude instala pra você)
-- uns 2 GB livres pros modelos de escuta, mais o áudio das lives
+A partir da raiz do checkout:
 
-## Respeite os streamers
+~~~bash
+SKILL="$PWD/.agents/skills/stream-clipper"
+DEST="$HOME/.agents/skills/stream-clipper"
+python3 "$SKILL/scripts/install.py" --source "$SKILL" --destination "$DEST"
+python3 -m venv "$DEST/.venv"
+"$DEST/.venv/bin/python" -m pip install --upgrade pip
+"$DEST/.venv/bin/python" -m pip install -r "$DEST/requirements.txt"
+"$DEST/.venv/bin/python" "$DEST/scripts/clip.py" doctor
+"$DEST/.venv/bin/python" "$DEST/scripts/install.py" --verify --destination "$DEST"
+~~~
 
-Corte só quem libera cortes e mantenha o crédito que vem no `.txt` de cada corte.
+## Uso
+
+1. Peça ao Codex para usar $stream-clipper com um link ou arquivo.
+2. A skill executa apenas a inspeção de metadados primeiro.
+3. Confira plataforma, canal, título, URL, duração e data. Autorize explicitamente aquela fonte.
+4. Acompanhe a preparação por blocos. O Codex lê transcrição e sinais e importa cada bloco, inclusive os sem candidatos.
+5. Revise os candidatos e previews. Aprovação dos candidatos é necessária antes da renderização final.
+
+Comandos e exemplos estão em .agents/skills/stream-clipper/references/operations.md. Configurações estão em .agents/skills/stream-clipper/references/configuration.md.
+
+## Benchmark CPU/GPU
+
+O comando benchmark executa a mesma amostra de áudio no CPU (int8) e CUDA (float16), registra tempo de carregamento e transcrição, RAM do processo e uso total de VRAM observado. Use apenas uma fonte local ou VOD que você tenha inspecionado e autorizado.
+
+Para a RTX 3060 12 GB, comece com o modelo tiny e uma amostra de 30–60 segundos. Depois, repita com base ou small se houver memória e espaço suficientes. O benchmark não presume CUDA operacional: consulte doctor e trate a execução CUDA como falha quando o runtime não estiver configurado. A contagem de dispositivos CUDA não substitui uma transcrição CUDA real.
+
+O passo a passo, pré-requisitos e interpretação dos resultados estão em operations.md na pasta references.
+
+## Manutenção, atualização e rollback
+
+A fonte oficial da skill é .agents/skills/stream-clipper/ neste repositório. Não edite cópias instaladas manualmente. Consulte references/maintenance.md para sincronizar, verificar, atualizar com backup e fazer rollback.
+
+## Testes e CI
+
+Os testes ficam em .agents/skills/stream-clipper/tests/. O workflow .github/workflows/stream-clipper.yml instala FFmpeg, dependências e executa os testes em Ubuntu e Windows. Os testes audiovisuais geram mídia sintética local; não acessam lives de terceiros.
+
+Executar localmente:
+
+~~~powershell
+Set-Location ".agents\skills\stream-clipper"
+python -m compileall -q scripts
+python -m unittest discover -s tests -v
+~~~
+
+## Origem e licença
+
+- Upstream: https://github.com/davixavier-coder/skill-clips
+- Fork: https://github.com/Dullestgoose360/skill-clips-codex
+- Base auditada: 97b7b9084df7158b976fc8e0a0432e31fd919a74
+- Branch de desenvolvimento: codex/general-clipper-adaptation
+
+O commit de origem não contém LICENSE ou outro arquivo de concessão de licença. A visibilidade pública do GitHub não é, por si só, uma autorização para reutilizar ou redistribuir código. A auditoria e a atribuição estão em docs/ORIGIN-AUDIT.md. Não publique ou redistribua partes derivadas sem resolver essa questão jurídica com o titular dos direitos.
+
+## Limitações conhecidas
+
+- Não monitora lives ao vivo continuamente; aceita VODs finalizados.
+- O chat replay é tentado somente para YouTube e pode não existir.
+- A posição da facecam é amostrada; múltiplas faces, avatares e câmeras móveis podem exigir recorte manual.
+- FFprobe/decodificação completa validam integridade técnica, mas não provam sincronização labial perceptual nem qualidade editorial.
+- O reconhecimento da skill e a instalação na pasta pessoal precisam ser confirmados no Codex instalado no computador do usuário.

@@ -1,9 +1,12 @@
-# Scope and limits
+# Escopo, limitações e verificações
 
-- Network support depends on the installed yt-dlp extractor and the public VOD. YouTube, Twitch and Kick are initial targets, not universal compatibility. Ongoing live streams, DRM, private/member-only/age-gated sources and authenticated access are not supported by this workflow.
-- Search automation is implemented for YouTube. Twitch/Kick discovery uses public UI/search or direct links. Chat replay is attempted for YouTube only; missing/failed chat is reported, never a success marker. Other platform chat is explicitly unavailable.
-- Section downloads can still require significant network I/O, depending on the provider. No claim is made that every server supports ranged access. Full-source fallback always requires a reviewed plan.
-- Face position is sampled, not tracked frame by frame. Multiple faces and camera movement can require a manual crop. A face does not prove a streamer camera box. No real-person fixture has yet been authorized for this project's test.
-- Technical AV timestamp/duration checks do not prove perceptual lip sync or editorial quality. Review previews by eye and ear.
-- Recognition and benchmark results depend on the actual installed client/environment. Report executed, mocked and pending tests separately.
-- Upstream base has no license file. Its original files and attribution are retained unchanged; no new license is assigned to that code.
+- O fluxo aceita VODs públicos finalizados e arquivos locais. Lives em andamento, DRM, fontes privadas, conteúdo exclusivo para membros, age-gated e acesso autenticado não são suportados. Nenhuma proteção de acesso deve ser contornada.
+- YouTube, Twitch e Kick são destinos iniciais, não garantia de compatibilidade universal. A descoberta automatizada de vídeos está implementada para YouTube; para Twitch/Kick use link direto ou descoberta pública e confirme metadados. O chat replay é tentado somente para YouTube e pode falhar ou não existir; outros chats são marcados como indisponíveis.
+- Downloads por seção podem exigir tráfego relevante e dependem do servidor. Nem todo provedor suporta intervalos. Fallback de vídeo integral exige plano revisado, estimativa de tamanho e confirmação. Estimativas de formato são aproximadas, não uma garantia de tráfego.
+- Transcrição em blocos tem checkpoints verificados. Uma falha CUDA ocorre em processo worker isolado; preparação pode cair para CPU. O benchmark executa CPU e CUDA separadamente e não faz fallback que mascare falha de GPU.
+- A comparação CPU/GPU mede tempo, RAM e memória total da GPU reportada por nvidia-smi. VRAM pode incluir outras aplicações e a amostragem periódica pode perder picos breves. Similaridade textual CPU/CUDA não mede acurácia de fala.
+- A detecção de face é amostrada, não rastreamento quadro a quadro. Múltiplos rostos, movimento de câmera, layouts incomuns e avatares podem exigir camera_box manual. A presença de rosto não prova que a região é a facecam. Não há fixture de pessoa real autorizada neste projeto.
+- Os testes audiovisuais automatizados usam padrões de teste sintéticos, áudio de tom e FFmpeg; eles exercitam contêiner, streams, composição 9:16, legenda ASS, codificação e decodificação integral, mas não provam qualidade de corte de uma live real.
+- Verificações FFprobe e decodificação completa detectam vários problemas técnicos, mas não comprovam sincronização labial perceptual, qualidade editorial ou resultado em plataformas.
+- Reconhecimento da skill e benchmark devem ser verificados no Codex e no hardware em que serão utilizados. Documentar separadamente testes executados, simulados e pendentes.
+- O commit de origem não tem arquivo de licença. A atribuição e os achados estão em docs/ORIGIN-AUDIT.md; nenhuma licença foi inferida da visibilidade pública.
