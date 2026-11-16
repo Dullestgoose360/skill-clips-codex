@@ -132,12 +132,27 @@ def run(args, timeout=1800, cwd=None):
     try:
         out, err = p.communicate(timeout=timeout)
     except BaseException:
-        if os.name == 'nt':
-            subprocess.run(['taskkill', '/PID', str(p.pid), '/T', '/F'], capture_output=True)
-        else:
-            import signal
-            os.killpg(p.pid, signal.SIGKILL)
-        p.wait()
+        # Kill the whole process tree, then drain and close both pipes before re-raising.
+        try:
+            if os.name == 'nt':
+                subprocess.run(['taskkill', '/PID', str(p.pid), '/T', '/F'], capture_output=True)
+            else:
+                import signal
+                try:
+                    os.killpg(p.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        finally:
+            try:
+                p.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                p.kill()
+                p.communicate()
+            finally:
+                if p.stdout:
+                    p.stdout.close()
+                if p.stderr:
+                    p.stderr.close()
         raise
     if p.returncode:
         # Tool diagnostics may contain signed media URLs, cookies or headers. Keep them out of logs.
